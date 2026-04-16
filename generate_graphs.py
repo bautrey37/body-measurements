@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 MIN_POINTS = 4
+HEIGHT_M = 1.75
 
 TIMEFRAME_DIRS = {
     "absolute": "combined",
@@ -69,6 +70,70 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     output_file = os.path.join(_output_dir(output_suffix), f"Weight_Waist_{output_suffix}.png")
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Weight+Waist {timeframe_name} graph saved to: {output_file}")
+    plt.close()
+
+
+def create_bmi_graph(df, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
+    """BMI over time computed from Weight (kg) and HEIGHT_M, with overweight/obese thresholds."""
+    filtered_df = df.copy()
+    if start_date is not None:
+        filtered_df = filtered_df[filtered_df[date_col] >= start_date]
+    if end_date is not None:
+        filtered_df = filtered_df[filtered_df[date_col] <= end_date]
+
+    weight = filtered_df[filtered_df[type_col] == "Weight"].sort_values(date_col)
+    if len(weight) < MIN_POINTS:
+        print(f"Skipping BMI {timeframe_name} - only {len(weight)} Weight points (< {MIN_POINTS})")
+        return
+
+    bmi = weight[value_col] / (HEIGHT_M ** 2)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(weight[date_col], bmi, marker="o", linewidth=2, markersize=4,
+            color="#2ca02c", label="BMI")
+
+    y_min = min(bmi.min(), 17)
+    y_max = max(bmi.max(), 31)
+    ax.set_ylim(y_min - 1, y_max + 1)
+
+    ax.axhspan(min(y_min - 1, 17), 18.5, color="#1f77b4", alpha=0.2, label="Underweight (<18.5)")
+    ax.axhspan(25, 30, color="#ffb347", alpha=0.2, label="Overweight (25-30)")
+    ax.axhspan(30, max(y_max + 1, 40), color="#d62728", alpha=0.2, label="Obese (30+)")
+    ax.axhline(18.5, color="#1f77b4", linestyle="--", linewidth=1)
+    ax.axhline(25, color="#ff7f0e", linestyle="--", linewidth=1)
+    ax.axhline(30, color="#d62728", linestyle="--", linewidth=1.5)
+    ax.text(weight[date_col].iloc[0], 30.2, "Obese threshold (30)",
+            color="#d62728", fontsize=10, fontweight="bold", va="bottom")
+    ax.text(weight[date_col].iloc[0], 25.2, "Overweight threshold (25)",
+            color="#ff7f0e", fontsize=9, va="bottom")
+    ax.text(weight[date_col].iloc[0], 18.7, "Underweight threshold (18.5)",
+            color="#1f77b4", fontsize=9, va="bottom")
+
+    latest_bmi = bmi.iloc[-1]
+    if latest_bmi >= 30:
+        status = f"WARNING: Latest BMI {latest_bmi:.1f} - Obese"
+        status_color = "#d62728"
+    elif latest_bmi >= 25:
+        status = f"Latest BMI {latest_bmi:.1f} - Overweight"
+        status_color = "#ff7f0e"
+    elif latest_bmi < 18.5:
+        status = f"WARNING: Latest BMI {latest_bmi:.1f} - Underweight"
+        status_color = "#1f77b4"
+    else:
+        status = f"Latest BMI {latest_bmi:.1f}"
+        status_color = "#2ca02c"
+    ax.set_title(f"BMI - {timeframe_name}\n{status}", fontsize=15, fontweight="bold",
+                 color=status_color)
+    ax.set_xlabel("Date")
+    ax.set_ylabel("BMI (kg/m²)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+    plt.tight_layout()
+
+    output_file = os.path.join(_output_dir(output_suffix), f"BMI_{output_suffix}.png")
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"BMI {timeframe_name} graph saved to: {output_file}")
     plt.close()
 
 
@@ -265,6 +330,8 @@ def create_graphs():
                           "All Time", "absolute")
     create_weight_waist_graph(df, date_col, type_col, value_col,
                               "All Time", "absolute")
+    create_bmi_graph(df, date_col, type_col, value_col,
+                     "All Time", "absolute")
 
     # Create graphs for 1-year and 2-year timeframes
     if pd.api.types.is_datetime64_any_dtype(df[date_col]):
@@ -276,6 +343,8 @@ def create_graphs():
                               "Last 1 Year", "1year", start_date=one_year_ago)
         create_weight_waist_graph(df, date_col, type_col, value_col,
                                   "Last 1 Year", "1year", start_date=one_year_ago)
+        create_bmi_graph(df, date_col, type_col, value_col,
+                         "Last 1 Year", "1year", start_date=one_year_ago)
 
         print("\n=== Creating 2-year timeframe graphs ===")
         two_years_ago = max_date - timedelta(days=730)
@@ -283,6 +352,8 @@ def create_graphs():
                               "Last 2 Years", "2year", start_date=two_years_ago)
         create_weight_waist_graph(df, date_col, type_col, value_col,
                                   "Last 2 Years", "2year", start_date=two_years_ago)
+        create_bmi_graph(df, date_col, type_col, value_col,
+                         "Last 2 Years", "2year", start_date=two_years_ago)
     else:
         print("Date column is not datetime format, cannot create year-based timeframe graphs")
 
