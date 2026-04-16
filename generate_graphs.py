@@ -1,11 +1,14 @@
-import pandas as pd
-import matplotlib.pyplot as plt
+import json
 import os
 from datetime import datetime, timedelta
+
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 MIN_POINTS = 4
-HEIGHT_M = 1.75
+DEFAULT_HEIGHT_M = 1.75
+USERS_FILE = os.path.join("data", "users.json")
 
 TIMEFRAME_DIRS = {
     "absolute": "combined",
@@ -14,14 +17,21 @@ TIMEFRAME_DIRS = {
 }
 
 
-def _output_dir(output_suffix):
+def _output_dir(user, output_suffix):
     subdir = TIMEFRAME_DIRS.get(output_suffix, output_suffix)
-    path = os.path.join("out", subdir)
+    path = os.path.join("out", user, subdir)
     os.makedirs(path, exist_ok=True)
     return path
 
 
-def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
+def _user_from_filename(filename):
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    if " - " in stem:
+        return stem.rsplit(" - ", 1)[-1].strip()
+    return stem.strip()
+
+
+def create_weight_waist_graph(df, user, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
     """Dual-axis graph overlaying Weight (kg) and Waist (cm) for a timeframe."""
     filtered_df = df.copy()
     if start_date is not None:
@@ -32,11 +42,9 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     weight = filtered_df[filtered_df[type_col] == "Weight"].sort_values(date_col)
     waist = filtered_df[filtered_df[type_col] == "Waist"].sort_values(date_col)
 
-    plot_weight = len(weight) >= MIN_POINTS
-    plot_waist = len(waist) >= MIN_POINTS
-
-    if not plot_weight and not plot_waist:
-        print(f"Skipping Weight+Waist {timeframe_name} - fewer than {MIN_POINTS} points for both")
+    if len(weight) < MIN_POINTS or len(waist) < MIN_POINTS:
+        print(f"Skipping Weight+Waist {timeframe_name} - need >= {MIN_POINTS} points for both "
+              f"(weight={len(weight)}, waist={len(waist)})")
         return
 
     fig, ax_w = plt.subplots(figsize=(12, 6))
@@ -45,12 +53,10 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     weight_color = "#1f77b4"
     waist_color = "#d62728"
 
-    if plot_weight:
-        ax_w.plot(weight[date_col], weight[value_col], marker="o", linewidth=2,
-                  markersize=4, color=weight_color, label="Weight (kg)")
-    if plot_waist:
-        ax_c.plot(waist[date_col], waist[value_col], marker="s", linewidth=2,
-                  markersize=4, color=waist_color, label="Waist (cm)")
+    ax_w.plot(weight[date_col], weight[value_col], marker="o", linewidth=2,
+              markersize=4, color=weight_color, label="Weight (kg)")
+    ax_c.plot(waist[date_col], waist[value_col], marker="s", linewidth=2,
+              markersize=4, color=waist_color, label="Waist (cm)")
 
     ax_w.set_xlabel("Date")
     ax_w.set_ylabel("Weight (kg)", color=weight_color)
@@ -64,17 +70,17 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     lines2, labels2 = ax_c.get_legend_handles_labels()
     ax_w.legend(lines + lines2, labels + labels2, loc="best")
 
-    plt.title(f"Weight & Waist - {timeframe_name}", fontsize=16, fontweight="bold")
+    plt.title(f"{user} - Weight & Waist - {timeframe_name}", fontsize=16, fontweight="bold")
     plt.tight_layout()
 
-    output_file = os.path.join(_output_dir(output_suffix), f"Weight_Waist_{output_suffix}.png")
+    output_file = os.path.join(_output_dir(user, output_suffix), f"Weight_Waist_{output_suffix}.png")
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"Weight+Waist {timeframe_name} graph saved to: {output_file}")
     plt.close()
 
 
-def create_bmi_graph(df, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
-    """BMI over time computed from Weight (kg) and HEIGHT_M, with overweight/obese thresholds."""
+def create_bmi_graph(df, user, height_m, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
+    """BMI over time computed from Weight (kg) and height_m, with BMI category thresholds."""
     filtered_df = df.copy()
     if start_date is not None:
         filtered_df = filtered_df[filtered_df[date_col] >= start_date]
@@ -86,7 +92,7 @@ def create_bmi_graph(df, date_col, type_col, value_col, timeframe_name, output_s
         print(f"Skipping BMI {timeframe_name} - only {len(weight)} Weight points (< {MIN_POINTS})")
         return
 
-    bmi = weight[value_col] / (HEIGHT_M ** 2)
+    bmi = weight[value_col] / (height_m ** 2)
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.plot(weight[date_col], bmi, marker="o", linewidth=2, markersize=4,
@@ -122,7 +128,7 @@ def create_bmi_graph(df, date_col, type_col, value_col, timeframe_name, output_s
     else:
         status = f"Latest BMI {latest_bmi:.1f}"
         status_color = "#2ca02c"
-    ax.set_title(f"BMI - {timeframe_name}\n{status}", fontsize=15, fontweight="bold",
+    ax.set_title(f"{user} - BMI - {timeframe_name}\n{status}", fontsize=15, fontweight="bold",
                  color=status_color)
     ax.set_xlabel("Date")
     ax.set_ylabel("BMI (kg/m²)")
@@ -131,13 +137,13 @@ def create_bmi_graph(df, date_col, type_col, value_col, timeframe_name, output_s
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
     plt.tight_layout()
 
-    output_file = os.path.join(_output_dir(output_suffix), f"BMI_{output_suffix}.png")
+    output_file = os.path.join(_output_dir(user, output_suffix), f"BMI_{output_suffix}.png")
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     print(f"BMI {timeframe_name} graph saved to: {output_file}")
     plt.close()
 
 
-def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, timeframe_name, output_suffix, start_date=None, end_date=None):
+def create_timeframe_graphs(df, user, date_col, type_col, value_col, unique_types, timeframe_name, output_suffix, start_date=None, end_date=None):
     """Create graphs for a specific timeframe"""
 
     # Filter data by timeframe if specified
@@ -181,7 +187,7 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
     rows = (num_types + cols - 1) // cols
     
     fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-    fig.suptitle(f'Data Analysis by Type - {timeframe_name}', fontsize=16, y=0.98)
+    fig.suptitle(f'{user} - Data Analysis by Type - {timeframe_name}', fontsize=16, y=0.98)
     
     # If only one subplot, axes might not be an array
     if num_types == 1:
@@ -227,7 +233,7 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
     plt.tight_layout()
     
     # Save the combined graph
-    output_file = os.path.join(_output_dir(output_suffix), f'data_graphs_combined_{output_suffix}.png')
+    output_file = os.path.join(_output_dir(user, output_suffix), f'data_graphs_combined_{output_suffix}.png')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Combined {timeframe_name} graphs saved to: {output_file}")
     
@@ -257,105 +263,103 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
         
         # Save individual graph
         safe_filename = data_type.replace(' ', '_').replace('/', '_').replace('\\', '_')
-        individual_file = os.path.join(_output_dir(output_suffix), f'{safe_filename}_graph_{output_suffix}.png')
+        individual_file = os.path.join(_output_dir(user, output_suffix), f'{safe_filename}_graph_{output_suffix}.png')
         plt.savefig(individual_file, dpi=300, bbox_inches='tight')
         print(f"Individual {timeframe_name} graph for {data_type} saved to: {individual_file}")
         
         plt.close()
 
-def create_graphs():
-    # Ensure output directory exists
-    os.makedirs('out', exist_ok=True)
-    
-    # Find CSV file in data folder
-    data_files = [f for f in os.listdir('data') if f.endswith('.csv')]
-    if not data_files:
-        print("No CSV files found in data folder")
-        return
-    
-    # Use the first CSV file found
-    csv_file = os.path.join('data', data_files[0])
-    print(f"Processing file: {csv_file}")
-    
-    # Read the CSV file
-    df = pd.read_csv(csv_file)
-    
-    # Assume the CSV has columns like 'date', 'type', 'value' or similar
-    # Try to identify date and type columns
-    date_col = None
-    type_col = None
-    value_col = None
-    
-    # Look for common date column names
+def _load_users():
+    """Load per-user info (e.g., height_m) from data/users.json. Missing file → empty dict."""
+    if not os.path.exists(USERS_FILE):
+        print(f"No users file at {USERS_FILE}; using defaults")
+        return {}
+    with open(USERS_FILE) as f:
+        return json.load(f)
+
+
+def _detect_columns(df):
+    date_col = type_col = value_col = None
     for col in df.columns:
-        if any(keyword in col.lower() for keyword in ['date', 'time', 'timestamp']):
+        lc = col.lower()
+        if date_col is None and any(k in lc for k in ("date", "time", "timestamp")):
             date_col = col
-            break
-    
-    # Look for type column
-    for col in df.columns:
-        if any(keyword in col.lower() for keyword in ['type', 'category', 'kind']):
+        if type_col is None and any(k in lc for k in ("type", "category", "kind")):
             type_col = col
-            break
-    
-    # Look for value column
-    for col in df.columns:
-        if any(keyword in col.lower() for keyword in ['value', 'amount', 'measurement', 'data']):
+        if value_col is None and any(k in lc for k in ("value", "amount", "measurement", "data")):
             value_col = col
-            break
-    
-    # If not found, use column positions (assuming standard format)
+
     if not date_col and len(df.columns) >= 1:
         date_col = df.columns[0]
     if not type_col and len(df.columns) >= 2:
         type_col = df.columns[1] if len(df.columns) > 2 else df.columns[-1]
     if not value_col and len(df.columns) >= 2:
         value_col = df.columns[-1] if len(df.columns) > 2 else df.columns[1]
-    
+    return date_col, type_col, value_col
+
+
+def _process_csv(csv_file, users):
+    user = _user_from_filename(csv_file)
+    info = users.get(user, {})
+    height_m = info.get("height_m", DEFAULT_HEIGHT_M)
+    gender = info.get("gender", "unspecified")
+    print(f"\n########## Processing {csv_file} (user={user}, height={height_m}m, gender={gender}) ##########")
+
+    df = pd.read_csv(csv_file)
+    date_col, type_col, value_col = _detect_columns(df)
     print(f"Using columns - Date: {date_col}, Type: {type_col}, Value: {value_col}")
-    
-    # Convert date column to datetime
+
     try:
         df[date_col] = pd.to_datetime(df[date_col])
-    except:
+    except Exception:
         print(f"Could not convert {date_col} to datetime, using as-is")
-    
-    # Get unique types
+
     unique_types = df[type_col].unique()
-    print(f"Found types: {unique_types}")
-    
-    # Create graphs for absolute timeframe (all data)
+
     print("\n=== Creating absolute timeframe graphs ===")
-    create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
-                          "All Time", "absolute")
-    create_weight_waist_graph(df, date_col, type_col, value_col,
+    create_timeframe_graphs(df, user, date_col, type_col, value_col, unique_types,
+                            "All Time", "absolute")
+    create_weight_waist_graph(df, user, date_col, type_col, value_col,
                               "All Time", "absolute")
-    create_bmi_graph(df, date_col, type_col, value_col,
+    create_bmi_graph(df, user, height_m, date_col, type_col, value_col,
                      "All Time", "absolute")
 
-    # Create graphs for 1-year and 2-year timeframes
     if pd.api.types.is_datetime64_any_dtype(df[date_col]):
         max_date = df[date_col].max()
 
         print("\n=== Creating 1-year timeframe graphs ===")
         one_year_ago = max_date - timedelta(days=365)
-        create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
-                              "Last 1 Year", "1year", start_date=one_year_ago)
-        create_weight_waist_graph(df, date_col, type_col, value_col,
+        create_timeframe_graphs(df, user, date_col, type_col, value_col, unique_types,
+                                "Last 1 Year", "1year", start_date=one_year_ago)
+        create_weight_waist_graph(df, user, date_col, type_col, value_col,
                                   "Last 1 Year", "1year", start_date=one_year_ago)
-        create_bmi_graph(df, date_col, type_col, value_col,
+        create_bmi_graph(df, user, height_m, date_col, type_col, value_col,
                          "Last 1 Year", "1year", start_date=one_year_ago)
 
         print("\n=== Creating 2-year timeframe graphs ===")
         two_years_ago = max_date - timedelta(days=730)
-        create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
-                              "Last 2 Years", "2year", start_date=two_years_ago)
-        create_weight_waist_graph(df, date_col, type_col, value_col,
+        create_timeframe_graphs(df, user, date_col, type_col, value_col, unique_types,
+                                "Last 2 Years", "2year", start_date=two_years_ago)
+        create_weight_waist_graph(df, user, date_col, type_col, value_col,
                                   "Last 2 Years", "2year", start_date=two_years_ago)
-        create_bmi_graph(df, date_col, type_col, value_col,
+        create_bmi_graph(df, user, height_m, date_col, type_col, value_col,
                          "Last 2 Years", "2year", start_date=two_years_ago)
     else:
         print("Date column is not datetime format, cannot create year-based timeframe graphs")
+
+
+def create_graphs():
+    os.makedirs("out", exist_ok=True)
+
+    data_files = sorted(f for f in os.listdir("data") if f.endswith(".csv"))
+    if not data_files:
+        print("No CSV files found in data folder")
+        return
+
+    users = _load_users()
+    for name in data_files:
+        _process_csv(os.path.join("data", name), users)
+
 
 if __name__ == "__main__":
     create_graphs()
