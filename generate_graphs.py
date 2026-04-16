@@ -4,9 +4,12 @@ import os
 from datetime import datetime, timedelta
 import numpy as np
 
+MIN_POINTS = 4
+
 TIMEFRAME_DIRS = {
     "absolute": "combined",
     "1year": "1year",
+    "2year": "2year",
 }
 
 
@@ -28,8 +31,11 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     weight = filtered_df[filtered_df[type_col] == "Weight"].sort_values(date_col)
     waist = filtered_df[filtered_df[type_col] == "Waist"].sort_values(date_col)
 
-    if weight.empty and waist.empty:
-        print(f"No Weight/Waist data for {timeframe_name}")
+    plot_weight = len(weight) >= MIN_POINTS
+    plot_waist = len(waist) >= MIN_POINTS
+
+    if not plot_weight and not plot_waist:
+        print(f"Skipping Weight+Waist {timeframe_name} - fewer than {MIN_POINTS} points for both")
         return
 
     fig, ax_w = plt.subplots(figsize=(12, 6))
@@ -38,10 +44,10 @@ def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name,
     weight_color = "#1f77b4"
     waist_color = "#d62728"
 
-    if not weight.empty:
+    if plot_weight:
         ax_w.plot(weight[date_col], weight[value_col], marker="o", linewidth=2,
                   markersize=4, color=weight_color, label="Weight (kg)")
-    if not waist.empty:
+    if plot_waist:
         ax_c.plot(waist[date_col], waist[value_col], marker="s", linewidth=2,
                   markersize=4, color=waist_color, label="Waist (cm)")
 
@@ -80,17 +86,17 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
         print(f"No data available for {timeframe_name} timeframe")
         return
     
-    # Filter out types that have no data in this timeframe
+    # Filter out types with fewer than MIN_POINTS data points in this timeframe
     types_with_data = []
     for data_type in unique_types:
         type_data = filtered_df[filtered_df[type_col] == data_type]
-        if not type_data.empty:
+        if len(type_data) >= MIN_POINTS:
             types_with_data.append(data_type)
         else:
-            print(f"Skipping {data_type} - no data in {timeframe_name} timeframe")
-    
+            print(f"Skipping {data_type} - {len(type_data)} points (< {MIN_POINTS}) in {timeframe_name} timeframe")
+
     if not types_with_data:
-        print(f"No types have data for {timeframe_name} timeframe")
+        print(f"No types have enough data for {timeframe_name} timeframe")
         return
     
     unique_types = types_with_data
@@ -260,18 +266,25 @@ def create_graphs():
     create_weight_waist_graph(df, date_col, type_col, value_col,
                               "All Time", "absolute")
 
-    # Create graphs for 1-year timeframe
-    print("\n=== Creating 1-year timeframe graphs ===")
+    # Create graphs for 1-year and 2-year timeframes
     if pd.api.types.is_datetime64_any_dtype(df[date_col]):
-        # Calculate 1 year ago from the most recent date
         max_date = df[date_col].max()
+
+        print("\n=== Creating 1-year timeframe graphs ===")
         one_year_ago = max_date - timedelta(days=365)
         create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
                               "Last 1 Year", "1year", start_date=one_year_ago)
         create_weight_waist_graph(df, date_col, type_col, value_col,
                                   "Last 1 Year", "1year", start_date=one_year_ago)
+
+        print("\n=== Creating 2-year timeframe graphs ===")
+        two_years_ago = max_date - timedelta(days=730)
+        create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
+                              "Last 2 Years", "2year", start_date=two_years_ago)
+        create_weight_waist_graph(df, date_col, type_col, value_col,
+                                  "Last 2 Years", "2year", start_date=two_years_ago)
     else:
-        print("Date column is not datetime format, cannot create 1-year timeframe graphs")
+        print("Date column is not datetime format, cannot create year-based timeframe graphs")
 
 if __name__ == "__main__":
     create_graphs()
