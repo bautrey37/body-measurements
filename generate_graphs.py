@@ -4,9 +4,71 @@ import os
 from datetime import datetime, timedelta
 import numpy as np
 
+TIMEFRAME_DIRS = {
+    "absolute": "combined",
+    "1year": "1year",
+}
+
+
+def _output_dir(output_suffix):
+    subdir = TIMEFRAME_DIRS.get(output_suffix, output_suffix)
+    path = os.path.join("out", subdir)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def create_weight_waist_graph(df, date_col, type_col, value_col, timeframe_name, output_suffix, start_date=None, end_date=None):
+    """Dual-axis graph overlaying Weight (kg) and Waist (cm) for a timeframe."""
+    filtered_df = df.copy()
+    if start_date is not None:
+        filtered_df = filtered_df[filtered_df[date_col] >= start_date]
+    if end_date is not None:
+        filtered_df = filtered_df[filtered_df[date_col] <= end_date]
+
+    weight = filtered_df[filtered_df[type_col] == "Weight"].sort_values(date_col)
+    waist = filtered_df[filtered_df[type_col] == "Waist"].sort_values(date_col)
+
+    if weight.empty and waist.empty:
+        print(f"No Weight/Waist data for {timeframe_name}")
+        return
+
+    fig, ax_w = plt.subplots(figsize=(12, 6))
+    ax_c = ax_w.twinx()
+
+    weight_color = "#1f77b4"
+    waist_color = "#d62728"
+
+    if not weight.empty:
+        ax_w.plot(weight[date_col], weight[value_col], marker="o", linewidth=2,
+                  markersize=4, color=weight_color, label="Weight (kg)")
+    if not waist.empty:
+        ax_c.plot(waist[date_col], waist[value_col], marker="s", linewidth=2,
+                  markersize=4, color=waist_color, label="Waist (cm)")
+
+    ax_w.set_xlabel("Date")
+    ax_w.set_ylabel("Weight (kg)", color=weight_color)
+    ax_c.set_ylabel("Waist (cm)", color=waist_color)
+    ax_w.tick_params(axis="y", labelcolor=weight_color)
+    ax_c.tick_params(axis="y", labelcolor=waist_color)
+    ax_w.grid(True, alpha=0.3)
+    plt.setp(ax_w.get_xticklabels(), rotation=45, ha="right")
+
+    lines, labels = ax_w.get_legend_handles_labels()
+    lines2, labels2 = ax_c.get_legend_handles_labels()
+    ax_w.legend(lines + lines2, labels + labels2, loc="best")
+
+    plt.title(f"Weight & Waist - {timeframe_name}", fontsize=16, fontweight="bold")
+    plt.tight_layout()
+
+    output_file = os.path.join(_output_dir(output_suffix), f"Weight_Waist_{output_suffix}.png")
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"Weight+Waist {timeframe_name} graph saved to: {output_file}")
+    plt.close()
+
+
 def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, timeframe_name, output_suffix, start_date=None, end_date=None):
     """Create graphs for a specific timeframe"""
-    
+
     # Filter data by timeframe if specified
     filtered_df = df.copy()
     if start_date is not None:
@@ -94,7 +156,7 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
     plt.tight_layout()
     
     # Save the combined graph
-    output_file = os.path.join('out', f'data_graphs_combined_{output_suffix}.png')
+    output_file = os.path.join(_output_dir(output_suffix), f'data_graphs_combined_{output_suffix}.png')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Combined {timeframe_name} graphs saved to: {output_file}")
     
@@ -124,7 +186,7 @@ def create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, tim
         
         # Save individual graph
         safe_filename = data_type.replace(' ', '_').replace('/', '_').replace('\\', '_')
-        individual_file = os.path.join('out', f'{safe_filename}_graph_{output_suffix}.png')
+        individual_file = os.path.join(_output_dir(output_suffix), f'{safe_filename}_graph_{output_suffix}.png')
         plt.savefig(individual_file, dpi=300, bbox_inches='tight')
         print(f"Individual {timeframe_name} graph for {data_type} saved to: {individual_file}")
         
@@ -193,17 +255,21 @@ def create_graphs():
     
     # Create graphs for absolute timeframe (all data)
     print("\n=== Creating absolute timeframe graphs ===")
-    create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, 
+    create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
                           "All Time", "absolute")
-    
+    create_weight_waist_graph(df, date_col, type_col, value_col,
+                              "All Time", "absolute")
+
     # Create graphs for 1-year timeframe
     print("\n=== Creating 1-year timeframe graphs ===")
     if pd.api.types.is_datetime64_any_dtype(df[date_col]):
         # Calculate 1 year ago from the most recent date
         max_date = df[date_col].max()
         one_year_ago = max_date - timedelta(days=365)
-        create_timeframe_graphs(df, date_col, type_col, value_col, unique_types, 
+        create_timeframe_graphs(df, date_col, type_col, value_col, unique_types,
                               "Last 1 Year", "1year", start_date=one_year_ago)
+        create_weight_waist_graph(df, date_col, type_col, value_col,
+                                  "Last 1 Year", "1year", start_date=one_year_ago)
     else:
         print("Date column is not datetime format, cannot create 1-year timeframe graphs")
 
