@@ -48,6 +48,35 @@ Expected columns (names are auto-detected, case-insensitive):
 - **Type** / category / kind (e.g. `Weight`, `Waist`, `Body Fat`, ...)
 - **Value** / measurement / amount
 
+## Workout data (Progression app)
+
+Strength and cardio data exported from the [Progression](https://progression.app)
+fitness app can be graphed alongside body measurements for the same user.
+
+1. Export your data from Progression (a CSV lands in `~/Downloads`).
+2. Import and aggregate it:
+   ```bash
+   python import_workouts.py            # writes "Workouts - Brandon.csv"
+   python import_workouts.py Alice      # writes "Workouts - Alice.csv"
+   ```
+   The newest Progression export in `~/Downloads` is detected by its CSV
+   header (any filename), aggregated **weekly**, and written to
+   `data/Workouts - <Name>.csv` with the same `Measurement,Unit,Type,Date`
+   schema as the measurement files.
+
+New Types produced (one weekly point each, weeks with no data skipped):
+
+- **Strength Volume** (`kg`) — sum of weight × reps, weight normalised to kg.
+- **Strength Sessions** (`count`) — distinct training days that week.
+- **Run Distance** (`km`) — distance from Running exercises.
+- **Cardio Distance** (`km`) — distance across all cardio exercises.
+- **Cardio Duration** (`min`) — total cardio set duration.
+
+Because `generate_graphs.py` merges every `data/*.csv` that maps to the same
+user, `Workouts - Brandon.csv` and `Body Measurements - Brandon.csv` are
+combined automatically — the workout Types appear in Brandon's graphs (combined
+grid and per-type, across all timeframes) right next to Weight, Waist, and BMI.
+
 ## User profiles (`data/users.json`)
 
 Per-user info is read from `data/users.json`. Missing users fall back to

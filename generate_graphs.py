@@ -298,16 +298,25 @@ def _detect_columns(df):
     return date_col, type_col, value_col
 
 
-def _process_csv(csv_file, users):
-    user = _user_from_filename(csv_file)
+def _read_normalized(csv_file):
+    """Read one CSV and return (df, date_col, type_col, value_col) with columns
+    renamed to canonical 'Date'/'Type'/'Value' so multiple files concat cleanly."""
+    df = pd.read_csv(csv_file)
+    date_col, type_col, value_col = _detect_columns(df)
+    print(f"  {os.path.basename(csv_file)} columns - Date: {date_col}, Type: {type_col}, Value: {value_col}")
+    df = df.rename(columns={date_col: "Date", type_col: "Type", value_col: "Value"})
+    return df[["Date", "Type", "Value"]]
+
+
+def _process_user(user, csv_files, users):
     info = users.get(user, {})
     height_m = info.get("height_m", DEFAULT_HEIGHT_M)
     gender = info.get("gender", "unspecified")
-    print(f"\n########## Processing {csv_file} (user={user}, height={height_m}m, gender={gender}) ##########")
+    file_list = ", ".join(os.path.basename(f) for f in csv_files)
+    print(f"\n########## Processing user={user} (height={height_m}m, gender={gender}) from {file_list} ##########")
 
-    df = pd.read_csv(csv_file)
-    date_col, type_col, value_col = _detect_columns(df)
-    print(f"Using columns - Date: {date_col}, Type: {type_col}, Value: {value_col}")
+    df = pd.concat([_read_normalized(f) for f in csv_files], ignore_index=True)
+    date_col, type_col, value_col = "Date", "Type", "Value"
 
     try:
         df[date_col] = pd.to_datetime(df[date_col])
@@ -357,8 +366,16 @@ def create_graphs():
         return
 
     users = _load_users()
+
+    # Group all CSVs by derived user so e.g. "Body Measurements - Brandon.csv"
+    # and "Workouts - Brandon.csv" merge into one dataframe for that user.
+    files_by_user = {}
     for name in data_files:
-        _process_csv(os.path.join("data", name), users)
+        path = os.path.join("data", name)
+        files_by_user.setdefault(_user_from_filename(path), []).append(path)
+
+    for user, csv_files in files_by_user.items():
+        _process_user(user, csv_files, users)
 
 
 if __name__ == "__main__":
