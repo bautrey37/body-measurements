@@ -40,6 +40,21 @@ Every `*.csv` file in `data/` is processed. The user name is derived from
 the filename (the part after the last ` - ` in the stem), so
 `Body Measurements - Example.csv` → user `Example`.
 
+## Refresh Brandon data in one step
+
+This repository includes a local Codex skill for the Brandon workflow. It
+downloads the latest Brandon tab from Google Sheets, replaces
+`data/Body Measurements - Brandon.csv`, and regenerates the graphs.
+
+Run it from the project root with:
+
+```bash
+$refresh-body-measurements
+```
+
+That command is the single-step refresh flow for this project. It keeps the
+CSV schema unchanged and writes the updated PNGs under `out/Brandon/`.
+
 ## CSV format
 
 Expected columns (names are auto-detected, case-insensitive):

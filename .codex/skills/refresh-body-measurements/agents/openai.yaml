@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refresh Body Measurements"
+  short_description: "Refresh Brandon data and regenerate graphs"
+  default_prompt: "Use $refresh-body-measurements to download the latest Brandon measurements and regenerate the charts."
